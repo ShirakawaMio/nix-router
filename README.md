@@ -131,6 +131,16 @@ public endpoint of a roaming WireGuard client that happens to be on an RWTH
 network. The NixOS firewall keeps strict reverse-path checking globally and
 allows the expected asymmetric return path only on the RWTH host veth.
 
+To use the NixOS host as an SSH jump host for RWTH systems, declare every local
+jump user so its outbound connections use the same policy table:
+
+```nix
+services.my-router.rwth.routeUsers = [ "router" ];
+```
+
+Then connect with, for example, `ssh -J router@vpn.example.com
+cluster-user@login23-g-1.hpc.itc.rwth-aachen.de`.
+
 ### NixOS agenix auto-connect
 
 The NixOS host profile uses agenix for unattended RWTH OpenConnect secrets. The

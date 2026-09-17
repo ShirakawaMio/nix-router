@@ -42,7 +42,7 @@ EOF
 }
 
 configure_policy_routes() {
-  local access_cidr cidr priority table
+  local access_cidr cidr priority table uid user user_priority
   access_cidr="${WG_ACCESS_CIDR:-10.77.0.0/24}"
   table="${RWTH_ROUTE_TABLE:-1078}"
   priority="${RWTH_ROUTE_PRIORITY:-10780}"
@@ -58,6 +58,17 @@ configure_policy_routes() {
   done
 
   ip -4 rule add priority "$priority" from "$access_cidr" lookup "$table"
+
+  user_priority=$((priority + 1))
+  for user in $(comma_to_space "${RWTH_ROUTE_USERS:-}"); do
+    ip -4 rule del priority "$user_priority" 2>/dev/null || true
+    if uid="$(id -u "$user" 2>/dev/null)"; then
+      ip -4 rule add priority "$user_priority" uidrange "$uid-$uid" lookup "$table"
+    else
+      info "RWTH route user does not exist: $user"
+    fi
+    user_priority=$((user_priority + 1))
+  done
 }
 
 main() {

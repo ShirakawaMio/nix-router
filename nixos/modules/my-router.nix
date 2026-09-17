@@ -130,6 +130,7 @@ let
     ${assign "RWTH_CIDRS" (csv cfg.rwth.cidrs)}
     ${assign "RWTH_ROUTE_TABLE" cfg.rwth.routeTable}
     ${assign "RWTH_ROUTE_PRIORITY" cfg.rwth.routePriority}
+    ${assign "RWTH_ROUTE_USERS" (csv cfg.rwth.routeUsers)}
 
     ${assign "MY_ROUTER_RULES_CONFIG" "${cfg.configDir}/rules/sources.toml"}
     ${assign "MY_ROUTER_SUBSCRIPTIONS_CONFIG" "${cfg.configDir}/subscriptions/config.json"}
@@ -529,6 +530,17 @@ in
         type = types.ints.positive;
         default = 10780;
         description = "Priority of the source-based RWTH policy routing rule.";
+      };
+
+      routeUsers = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = [ "router" ];
+        description = ''
+          Local users whose connections to RWTH networks use the RWTH policy
+          table. Add SSH jump-host users here so direct-tcpip connections reach
+          internal RWTH hosts.
+        '';
       };
 
       domains = mkOption {

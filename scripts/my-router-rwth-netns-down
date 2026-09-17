@@ -15,7 +15,7 @@ delete_gateway_exceptions() {
 }
 
 main() {
-  local cidr priority table
+  local cidr priority table user user_priority
   require_root
   load_env
   ip netns exec "$RWTH_NETNS" nft delete table inet my_router_rwth 2>/dev/null || true
@@ -23,6 +23,12 @@ main() {
   table="${RWTH_ROUTE_TABLE:-1078}"
   priority="${RWTH_ROUTE_PRIORITY:-10780}"
   ip -4 rule del priority "$priority" 2>/dev/null || true
+  user_priority=$((priority + 1))
+  for user in $(comma_to_space "${RWTH_ROUTE_USERS:-}"); do
+    [[ -n "$user" ]] || continue
+    ip -4 rule del priority "$user_priority" 2>/dev/null || true
+    user_priority=$((user_priority + 1))
+  done
   ip -4 route flush table "$table" 2>/dev/null || true
   for cidr in $(comma_to_space "${RWTH_CIDRS:-}"); do
     ip -4 route del "$cidr" via "$RWTH_NS_IP" dev "$RWTH_HOST_IF" 2>/dev/null || true
