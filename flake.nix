@@ -68,6 +68,12 @@
                     *) bash -n "$script" ;;
                   esac
                 done
+                sed \
+                  -e '/^source /d' \
+                  -e '/^main "\$@"$/d' \
+                  ${./scripts}/my-router-rwth-netns-up > "$TMPDIR/rwth-netns-up"
+                source "$TMPDIR/rwth-netns-up"
+                declare -F configure_policy_routes >/dev/null
                 touch "$out"
               '';
 

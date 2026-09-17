@@ -38,6 +38,8 @@ table inet my_router_rwth {
     oifname "tun0" ip saddr { $access_cidr, $netns_cidr } masquerade
   }
 }
+EOF
+}
 
 configure_policy_routes() {
   local access_cidr cidr priority table
@@ -56,8 +58,6 @@ configure_policy_routes() {
   done
 
   ip -4 rule add priority "$priority" from "$access_cidr" lookup "$table"
-}
-EOF
 }
 
 main() {
