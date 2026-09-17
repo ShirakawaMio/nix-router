@@ -141,6 +141,52 @@ services.my-router.rwth.routeUsers = [ "router" ];
 Then connect with, for example, `ssh -J router@vpn.example.com
 cluster-user@login23-g-1.hpc.itc.rwth-aachen.de`.
 
+### Automatic RWTH HPC login
+
+The optional `rwth-hpc-login` module starts the target SSH client on the jump
+host so it can answer RWTH's keyboard-interactive password and TOTP prompts
+from agenix secrets. Pin the target host key and grant only selected local
+users access to the decrypted files:
+
+```nix
+services.rwth-hpc-login = {
+  enable = true;
+  targetUser = "replace-with-rwth-user";
+  users = [ "router" ];
+  passwordFile = config.age.secrets.rwth-password.path;
+  totpSecretFile = config.age.secrets.rwth-totp-secret.path;
+  hostPublicKey = "ssh-ed25519 AAAA...";
+};
+
+age.secrets.rwth-password = {
+  file = ./secrets/rwth-password.age;
+  group = "rwth-hpc-login";
+  mode = "0440";
+};
+
+age.secrets.rwth-totp-secret = {
+  file = ./secrets/rwth-totp-secret.age;
+  group = "rwth-hpc-login";
+  mode = "0440";
+};
+```
+
+Run `ssh -t router@vpn.example.com rwth-hpc-login` for an interactive login.
+To keep `ssh rwth` as the local command, use a host alias that logs into the
+jump host and starts the helper there:
+
+```sshconfig
+Host rwth
+  HostName vpn.example.com
+  User router
+  RequestTTY force
+  RemoteCommand rwth-hpc-login
+```
+
+This alias intentionally replaces `ProxyJump`: with a transparent proxy the
+target authentication remains on the local SSH client and cannot be answered
+by the jump host.
+
 ### NixOS agenix auto-connect
 
 The NixOS host profile uses agenix for unattended RWTH OpenConnect secrets. The

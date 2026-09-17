@@ -18,6 +18,7 @@ in
   imports = [
     hardwareModule
     my-router.nixosModules.default
+    my-router.nixosModules.rwth-hpc-login
   ]
   ++ lib.optional (builtins.pathExists ./local.nix) ./local.nix;
 

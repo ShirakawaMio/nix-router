@@ -55,7 +55,31 @@
       );
 
       checks = forAllSystems (
-        { pkgs, ... }: {
+        { pkgs, system, ... }:
+        let
+          rwthHpcLoginEvaluation = nixpkgs.lib.nixosSystem {
+            inherit system;
+            modules = [
+              self.nixosModules.rwth-hpc-login
+              {
+                system.stateVersion = "24.11";
+                users.users.test.isNormalUser = true;
+                services.rwth-hpc-login = {
+                  enable = true;
+                  targetUser = "ab123456";
+                  hostPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKOr079DWsli+ySeDvGr+S4APZaMc36Fquer++FZh0px";
+                  passwordFile = "/run/agenix/rwth-password";
+                  totpSecretFile = "/run/agenix/rwth-totp-secret";
+                  users = [ "test" ];
+                };
+              }
+            ];
+          };
+          rwthHpcLoginPackage = nixpkgs.lib.findFirst (
+            package: package.name or "" == "rwth-hpc-login"
+          ) (throw "rwth-hpc-login package was not installed") rwthHpcLoginEvaluation.config.environment.systemPackages;
+        in
+        {
           shell-syntax =
             pkgs.runCommand "my-router-shell-syntax"
               {
@@ -90,9 +114,18 @@
                   python -m unittest discover -s ${./tests}
                 touch "$out"
               '';
+
+          rwth-hpc-login-module = pkgs.runCommand "rwth-hpc-login-module" { } ''
+            ${rwthHpcLoginPackage}/bin/rwth-hpc-login --help | grep -F \
+              'Usage: rwth-hpc-login [COMMAND [ARG...]]'
+            touch "$out"
+          '';
         }
       );
 
-      nixosModules.default = ./nixos/modules/my-router.nix;
+      nixosModules = {
+        default = ./nixos/modules/my-router.nix;
+        rwth-hpc-login = ./nixos/modules/rwth-hpc-login.nix;
+      };
     };
 }
