@@ -509,8 +509,10 @@ in
       cidrs = mkOption {
         type = types.listOf types.str;
         default = [
+          "134.61.0.0/16"
           "134.130.0.0/16"
           "137.226.0.0/16"
+          "192.35.229.0/24"
         ];
         description = "RWTH CIDRs forwarded to the RWTH namespace.";
       };
