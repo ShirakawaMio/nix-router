@@ -128,6 +128,8 @@ let
     ${assign "RWTH_OPENCONNECT_PID_FILE" cfg.rwth.pidFile}
     ${assign "RWTH_DNS" cfg.rwth.dns}
     ${assign "RWTH_CIDRS" (csv cfg.rwth.cidrs)}
+    ${assign "RWTH_ROUTE_TABLE" cfg.rwth.routeTable}
+    ${assign "RWTH_ROUTE_PRIORITY" cfg.rwth.routePriority}
 
     ${assign "MY_ROUTER_RULES_CONFIG" "${cfg.configDir}/rules/sources.toml"}
     ${assign "MY_ROUTER_SUBSCRIPTIONS_CONFIG" "${cfg.configDir}/subscriptions/config.json"}
@@ -515,6 +517,18 @@ in
           "192.35.229.0/24"
         ];
         description = "RWTH CIDRs forwarded to the RWTH namespace.";
+      };
+
+      routeTable = mkOption {
+        type = types.ints.positive;
+        default = 1078;
+        description = "Policy routing table used for RWTH client traffic.";
+      };
+
+      routePriority = mkOption {
+        type = types.ints.positive;
+        default = 10780;
+        description = "Priority of the source-based RWTH policy routing rule.";
       };
 
       domains = mkOption {
