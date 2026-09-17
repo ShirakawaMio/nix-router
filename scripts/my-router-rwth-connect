@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LIB_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/my-router-lib.sh
+source "$LIB_DIR/my-router-lib.sh"
+
+background=0
+non_inter=0
+passwd_file=""
+totp_secret_file=""
+pid_file=""
+
+usage() {
+  cat <<'EOF'
+usage: my-router-rwth-connect [--background] [--non-inter] [--pid-file PATH] [--passwd-file PATH] [--totp-secret-file PATH]
+
+Connect to RWTH OpenConnect inside the rwth network namespace.
+
+--background             Ask OpenConnect to daemonize after authentication.
+--non-inter              Fail instead of asking for interactive input.
+--pid-file PATH          PID file used with --background.
+--passwd-file PATH       Read the static VPN password from a file.
+--totp-secret-file PATH  Read the TOTP seed from a file and let OpenConnect generate OTPs.
+
+For unattended service mode, use both --passwd-file and --totp-secret-file.
+EOF
+}
+
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --background)
+      background=1
+      shift
+      ;;
+    --non-inter)
+      non_inter=1
+      shift
+      ;;
+    --pid-file)
+      [[ "$#" -ge 2 ]] || die "--pid-file requires a path"
+      pid_file="$2"
+      shift 2
+      ;;
+    --passwd-file)
+      [[ "$#" -ge 2 ]] || die "--passwd-file requires a path"
+      passwd_file="$2"
+      shift 2
+      ;;
+    --totp-secret-file)
+      [[ "$#" -ge 2 ]] || die "--totp-secret-file requires a path"
+      totp_secret_file="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      die "unknown argument: $1"
+      ;;
+  esac
+done
+
+find_vpnc_script() {
+  if [[ -n "${MY_ROUTER_VPNC_SCRIPT:-}" && -x "$MY_ROUTER_VPNC_SCRIPT" ]]; then
+    printf '%s\n' "$MY_ROUTER_VPNC_SCRIPT"
+    return 0
+  fi
+
+  local path
+  for path in \
+    /etc/vpnc/vpnc-script \
+    /usr/share/vpnc-scripts/vpnc-script \
+    /usr/lib/vpnc/vpnc-script \
+    /usr/local/etc/vpnc/vpnc-script; do
+    if [[ -x "$path" ]]; then
+      printf '%s\n' "$path"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+main() {
+  require_root
+  load_env
+  [[ "${RWTH_ENABLED:-1}" == "1" ]] || die "RWTH_ENABLED is not 1"
+  [[ -n "${RWTH_USER:-}" ]] || die "RWTH_USER is empty in $MY_ROUTER_ENV"
+  passwd_file="${passwd_file:-${RWTH_PASSWORD_FILE:-}}"
+  totp_secret_file="${totp_secret_file:-${RWTH_TOTP_SECRET_FILE:-}}"
+  pid_file="${pid_file:-${RWTH_OPENCONNECT_PID_FILE:-/run/my-router-rwth-openconnect.pid}}"
+
+  "$LIB_DIR/my-router-rwth-netns-up"
+
+  local vpnc_script
+  vpnc_script="$(find_vpnc_script)" || die "no vpnc-script found"
+
+  info "connecting to ${RWTH_GATEWAY:-vpn.rwth-aachen.de} as $RWTH_USER in netns $RWTH_NETNS"
+  if [[ -n "$passwd_file" ]]; then
+    require_file "$passwd_file" "RWTH VPN password file"
+    info "OpenConnect will read the RWTH VPN password from $passwd_file"
+  else
+    info "OpenConnect will ask for the RWTH VPN password and then the OTP"
+  fi
+  if [[ -n "$totp_secret_file" ]]; then
+    require_file "$totp_secret_file" "RWTH TOTP secret file"
+    info "OpenConnect will generate RWTH OTPs from $totp_secret_file"
+  elif [[ -n "$passwd_file" ]]; then
+    info "If RWTH asks for OTP, OpenConnect may still require interactive input"
+  fi
+
+  local args=(
+    --protocol=anyconnect
+    --authgroup="${RWTH_AUTHGROUP:-RWTH-VPN (Split Tunnel)}"
+    --user="$RWTH_USER"
+    --script="$vpnc_script"
+  )
+
+  if [[ "$non_inter" == "1" ]]; then
+    args+=(--non-inter)
+  fi
+
+  if [[ "$background" == "1" ]]; then
+    args+=(--background --pid-file="$pid_file")
+  fi
+
+  if [[ -n "$totp_secret_file" ]]; then
+    args+=(--token-mode=totp --token-secret="@${totp_secret_file}")
+  fi
+
+  if [[ -n "$passwd_file" ]]; then
+    exec ip netns exec "$RWTH_NETNS" openconnect \
+      "${args[@]}" \
+      --passwd-on-stdin \
+      "${RWTH_GATEWAY:-vpn.rwth-aachen.de}" <"$passwd_file"
+  fi
+
+  exec ip netns exec "$RWTH_NETNS" openconnect \
+    "${args[@]}" \
+    "${RWTH_GATEWAY:-vpn.rwth-aachen.de}"
+}
+
+main "$@"

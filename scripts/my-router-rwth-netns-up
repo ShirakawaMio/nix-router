@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LIB_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/my-router-lib.sh
+source "$LIB_DIR/my-router-lib.sh"
+
+route_gateway_exceptions() {
+  local default_line default_via default_dev gateway ip
+  default_line="$(ip -4 route show default | head -n1 || true)"
+  default_via="$(awk '{ for (i = 1; i <= NF; i++) if ($i == "via") print $(i + 1) }' <<<"$default_line" | head -n1)"
+  default_dev="$(awk '{ for (i = 1; i <= NF; i++) if ($i == "dev") print $(i + 1) }' <<<"$default_line" | head -n1)"
+  gateway="${RWTH_GATEWAY:-vpn.rwth-aachen.de}"
+
+  if [[ -z "$default_via" || -z "$default_dev" ]]; then
+    info "could not find IPv4 default route; skipping RWTH gateway route exceptions"
+    return 0
+  fi
+
+  while read -r ip; do
+    [[ -n "$ip" ]] || continue
+    ip route replace "$ip/32" via "$default_via" dev "$default_dev"
+  done < <(getent ahostsv4 "$gateway" | awk '{ print $1 }' | sort -u)
+}
+
+apply_netns_nat() {
+  local access_cidr netns_cidr
+  access_cidr="${WG_ACCESS_CIDR:-10.77.0.0/24}"
+  netns_cidr="${RWTH_NETNS_CIDR:-10.78.0.0/30}"
+
+  ip netns exec "$RWTH_NETNS" nft -f - <<EOF
+table inet my_router_rwth
+delete table inet my_router_rwth
+
+table inet my_router_rwth {
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+    oifname "tun0" ip saddr { $access_cidr, $netns_cidr } masquerade
+  }
+}
+EOF
+}
+
+main() {
+  require_root
+  load_env
+  [[ "${RWTH_ENABLED:-1}" == "1" ]] || exit 0
+
+  ip netns add "$RWTH_NETNS" 2>/dev/null || true
+
+  if ! ip link show "$RWTH_HOST_IF" >/dev/null 2>&1; then
+    ip link add "$RWTH_HOST_IF" type veth peer name "$RWTH_NS_IF"
+    ip link set "$RWTH_NS_IF" netns "$RWTH_NETNS"
+  fi
+
+  ip addr replace "$RWTH_HOST_ADDRESS" dev "$RWTH_HOST_IF"
+  ip link set "$RWTH_HOST_IF" up
+
+  ip netns exec "$RWTH_NETNS" ip addr replace "$RWTH_NS_ADDRESS" dev "$RWTH_NS_IF"
+  ip netns exec "$RWTH_NETNS" ip link set lo up
+  ip netns exec "$RWTH_NETNS" ip link set "$RWTH_NS_IF" up
+  ip netns exec "$RWTH_NETNS" ip route replace default via "$RWTH_HOST_IP" dev "$RWTH_NS_IF"
+
+  install -d -m 0755 "/etc/netns/$RWTH_NETNS"
+  printf 'nameserver %s\n' "${RWTH_DNS:-1.1.1.1}" >"/etc/netns/$RWTH_NETNS/resolv.conf"
+
+  route_gateway_exceptions
+
+  for cidr in $(comma_to_space "${RWTH_CIDRS:-}"); do
+    ip route replace "$cidr" via "$RWTH_NS_IP" dev "$RWTH_HOST_IF"
+  done
+
+  apply_netns_nat
+
+  info "RWTH namespace $RWTH_NETNS is ready"
+}
+
+main "$@"

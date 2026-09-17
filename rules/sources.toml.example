@@ -1,0 +1,29 @@
+[publish]
+output_root = "/var/lib/my-router/www"
+token = "change-this-long-random-token"
+public_base_url = "https://vpn.example.com/change-this-long-random-token"
+
+[ads]
+# Hosts, AdGuard, and Clash DOMAIN/DOMAIN-SUFFIX style lines are accepted.
+urls = [
+  "https://raw.githubusercontent.com/217heidai/adblockfilters/main/rules/adblockmihomo.yaml",
+]
+local_files = [
+  "/etc/my-router/rules/local-ads.txt",
+]
+
+[office]
+cidrs = [
+  "10.20.0.0/16",
+  "10.30.0.0/16",
+]
+
+[rwth]
+cidrs = [
+  "134.130.0.0/16",
+  "137.226.0.0/16",
+]
+domains = [
+  "rwth-aachen.de",
+  "rwth.de",
+]

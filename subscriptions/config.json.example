@@ -1,0 +1,16 @@
+{
+  "backend_url": "http://127.0.0.1:3000",
+  "collection_name": "my-router",
+  "sources_file": null,
+  "node_interval": 3600,
+  "allow_insecure_publication": false,
+  "access_node": {
+    "enabled": false,
+    "name": "my-router",
+    "server": "vpn.example.com",
+    "port": 51820,
+    "ip": "10.77.0.2/32",
+    "client_private_key_file": "/run/agenix/wg-access-client-private",
+    "server_private_key_file": "/var/lib/my-router/secrets/wg-access.key"
+  }
+}

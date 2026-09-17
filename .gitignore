@@ -1,0 +1,16 @@
+result
+result-*
+__pycache__/
+*.pyc
+.env
+*.key
+*.age
+secrets/*
+!secrets/README.md
+
+# Machine-specific NixOS state and private deployment values.
+nixos/hosts/*/local.nix
+nixos/hosts/*/hardware-configuration.nix
+nixos/hosts/*/secrets/*
+!nixos/hosts/*/secrets/README.md
+!nixos/hosts/*/secrets/*.example

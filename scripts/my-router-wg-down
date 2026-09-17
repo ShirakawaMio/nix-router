@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LIB_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/my-router-lib.sh
+source "$LIB_DIR/my-router-lib.sh"
+
+iface_from_role() {
+  case "${1:-}" in
+    access) printf '%s\n' "${WG_ACCESS_IF:-wg-access}" ;;
+    office) printf '%s\n' "${WG_OFFICE_IF:-wg-office}" ;;
+    *) die "usage: my-router-wg-down access|office" ;;
+  esac
+}
+
+main() {
+  require_root
+  load_env
+  local role="${1:-}"
+  local iface
+  iface="$(iface_from_role "$role")"
+
+  if ! ip link show "$iface" >/dev/null 2>&1; then
+    info "$iface is not up"
+    exit 0
+  fi
+
+  exec wg-quick down "/etc/wireguard/${iface}.conf"
+}
+
+main "$@"

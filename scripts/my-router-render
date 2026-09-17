@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LIB_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/my-router-lib.sh
+source "$LIB_DIR/my-router-lib.sh"
+
+render_wg_access() {
+  require_file "$WG_ACCESS_PRIVATE_KEY_FILE" "wg-access private key"
+  install -d -m 0700 "$WIREGUARD_DIR"
+  umask 077
+  {
+    printf '[Interface]\n'
+    printf 'Address = %s\n' "$WG_ACCESS_ADDRESS"
+    printf 'ListenPort = %s\n' "$WG_ACCESS_PORT"
+    printf 'PrivateKey = %s\n' "$(cat "$WG_ACCESS_PRIVATE_KEY_FILE")"
+    printf 'SaveConfig = false\n\n'
+    if [[ -f "${WG_ACCESS_PEERS_FILE:-}" ]]; then
+      cat "$WG_ACCESS_PEERS_FILE"
+      printf '\n'
+    else
+      printf '# Add client [Peer] blocks in %s\n' "${WG_ACCESS_PEERS_FILE:-/etc/my-router/wg-access-peers.conf}"
+    fi
+  } >"$WIREGUARD_DIR/${WG_ACCESS_IF}.conf"
+}
+
+render_wg_office() {
+  [[ "${WG_OFFICE_ENABLED:-0}" == "1" ]] || return 0
+  require_file "$WG_OFFICE_PRIVATE_KEY_FILE" "wg-office private key"
+  [[ -n "${WG_OFFICE_PEER_PUBLIC_KEY:-}" ]] || die "WG_OFFICE_PEER_PUBLIC_KEY is empty"
+  [[ -n "${WG_OFFICE_ENDPOINT:-}" ]] || die "WG_OFFICE_ENDPOINT is empty"
+  [[ -n "${WG_OFFICE_ALLOWED_IPS:-}" ]] || die "WG_OFFICE_ALLOWED_IPS is empty"
+
+  install -d -m 0700 "$WIREGUARD_DIR"
+  umask 077
+  {
+    printf '[Interface]\n'
+    printf 'Address = %s\n' "$WG_OFFICE_ADDRESS"
+    printf 'PrivateKey = %s\n' "$(cat "$WG_OFFICE_PRIVATE_KEY_FILE")"
+    printf 'SaveConfig = false\n\n'
+    printf '[Peer]\n'
+    printf 'PublicKey = %s\n' "$WG_OFFICE_PEER_PUBLIC_KEY"
+    printf 'Endpoint = %s\n' "$WG_OFFICE_ENDPOINT"
+    printf 'AllowedIPs = %s\n' "$WG_OFFICE_ALLOWED_IPS"
+    printf 'PersistentKeepalive = %s\n' "${WG_OFFICE_PERSISTENT_KEEPALIVE:-25}"
+  } >"$WIREGUARD_DIR/${WG_OFFICE_IF}.conf"
+}
+
+render_nftables() {
+  local office_set rwth_set
+  office_set="$(nft_set "${WG_OFFICE_ALLOWED_IPS:-}")"
+  rwth_set="$(nft_set "${RWTH_CIDRS:-}")"
+
+  install -d -m 0755 "$MY_ROUTER_CONFIG_DIR"
+  cat >"$MY_ROUTER_CONFIG_DIR/nftables.conf" <<EOF
+flush ruleset
+
+define ext_if = "${EXT_IF:-eth0}"
+define wg_access_if = "${WG_ACCESS_IF:-wg-access}"
+define wg_office_if = "${WG_OFFICE_IF:-wg-office}"
+define rwth_host_if = "${RWTH_HOST_IF:-vrwth-host}"
+define wg_access_port = ${WG_ACCESS_PORT:-51820}
+define ssh_port = ${SSH_PORT:-22}
+define publish_port = ${PUBLISH_PORT:-8080}
+define wg_access_cidr = ${WG_ACCESS_CIDR:-10.77.0.0/24}
+define rwth_netns_cidr = ${RWTH_NETNS_CIDR:-10.78.0.0/30}
+define office4 = $office_set
+define rwth4 = $rwth_set
+
+table inet my_router {
+  chain input {
+    type filter hook input priority filter; policy drop;
+    iif "lo" accept
+    ct state established,related accept
+    ip protocol icmp accept
+    ip6 nexthdr ipv6-icmp accept
+    udp dport \$wg_access_port accept
+    tcp dport { \$ssh_port, 80, 443, \$publish_port } accept
+  }
+
+  chain forward {
+    type filter hook forward priority filter; policy drop;
+    ct state established,related accept
+    iifname \$wg_access_if oifname \$wg_office_if ip daddr \$office4 accept
+    iifname \$wg_access_if oifname \$rwth_host_if ip daddr \$rwth4 accept
+  }
+
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+    oifname \$ext_if ip saddr \$rwth_netns_cidr masquerade
+    oifname \$wg_office_if ip saddr \$wg_access_cidr masquerade
+    oifname \$rwth_host_if ip saddr \$wg_access_cidr masquerade
+  }
+}
+EOF
+}
+
+render_caddy() {
+  install -d -m 0755 "$MY_ROUTER_CONFIG_DIR" "$MY_ROUTER_WWW_DIR"
+  cat >"$MY_ROUTER_CONFIG_DIR/Caddyfile" <<EOF
+${PUBLISH_BIND:-:8080} {
+  root * ${MY_ROUTER_WWW_DIR}
+  file_server
+}
+EOF
+}
+
+main() {
+  require_root
+  load_env
+  render_wg_access
+  render_wg_office
+  render_nftables
+  render_caddy
+  info "rendered $WIREGUARD_DIR, $MY_ROUTER_CONFIG_DIR/nftables.conf, and $MY_ROUTER_CONFIG_DIR/Caddyfile"
+}
+
+main "$@"

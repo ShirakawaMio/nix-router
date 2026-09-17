@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LIB_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/my-router-lib.sh
+source "$LIB_DIR/my-router-lib.sh"
+
+install_examples() {
+  local share
+  share="$(share_dir)"
+  install -d -m 0755 "$MY_ROUTER_CONFIG_DIR" "$MY_ROUTER_CONFIG_DIR/rules" "$MY_ROUTER_STATE_DIR" "$MY_ROUTER_WWW_DIR"
+  install -d -m 0700 "$MY_ROUTER_CONFIG_DIR/secrets"
+
+  if [[ ! -f "$MY_ROUTER_ENV" ]]; then
+    install -m 0640 "$share/hosts/miople/miople.env.example" "$MY_ROUTER_ENV"
+    info "created $MY_ROUTER_ENV; edit it before starting services"
+  fi
+
+  if [[ ! -f "$MY_ROUTER_CONFIG_DIR/wg-access-peers.conf" ]]; then
+    install -m 0640 "$share/hosts/miople/wg-access-peers.conf.example" "$MY_ROUTER_CONFIG_DIR/wg-access-peers.conf"
+  fi
+
+  if [[ ! -f "$MY_ROUTER_CONFIG_DIR/rules/sources.toml" ]]; then
+    install -m 0644 "$share/rules/sources.toml.example" "$MY_ROUTER_CONFIG_DIR/rules/sources.toml"
+  fi
+}
+
+install_gc_root() {
+  local root
+  root="$(package_root)"
+  install -d -m 0755 /opt/my-router
+  ln -sfn "$root" /opt/my-router/current
+
+  if [[ -d /nix/var/nix/gcroots ]]; then
+    install -d -m 0755 /nix/var/nix/gcroots/my-router
+    ln -sfn "$root" /nix/var/nix/gcroots/my-router/current
+  fi
+}
+
+write_unit() {
+  local path="$1"
+  shift
+  install -d -m 0755 /etc/systemd/system
+  printf '%s\n' "$@" >"/etc/systemd/system/$path"
+}
+
+install_units() {
+  write_unit my-router-wg-access.service \
+    '[Unit]' \
+    'Description=my-router WireGuard client access interface' \
+    'After=network-online.target' \
+    'Wants=network-online.target' \
+    '' \
+    '[Service]' \
+    'Type=oneshot' \
+    'RemainAfterExit=yes' \
+    'ExecStart=/opt/my-router/current/bin/my-router-wg-up access' \
+    'ExecStop=/opt/my-router/current/bin/my-router-wg-down access' \
+    '' \
+    '[Install]' \
+    'WantedBy=multi-user.target'
+
+  write_unit my-router-wg-office.service \
+    '[Unit]' \
+    'Description=my-router office WireGuard interface' \
+    'After=network-online.target' \
+    'Wants=network-online.target' \
+    '' \
+    '[Service]' \
+    'Type=oneshot' \
+    'RemainAfterExit=yes' \
+    'ExecStart=/opt/my-router/current/bin/my-router-wg-up office' \
+    'ExecStop=/opt/my-router/current/bin/my-router-wg-down office' \
+    '' \
+    '[Install]' \
+    'WantedBy=multi-user.target'
+
+  write_unit my-router-rwth-netns.service \
+    '[Unit]' \
+    'Description=my-router RWTH network namespace setup' \
+    'After=network-online.target' \
+    'Wants=network-online.target' \
+    '' \
+    '[Service]' \
+    'Type=oneshot' \
+    'RemainAfterExit=yes' \
+    'ExecStart=/opt/my-router/current/bin/my-router-rwth-netns-up' \
+    'ExecStop=/opt/my-router/current/bin/my-router-rwth-netns-down' \
+    '' \
+    '[Install]' \
+    'WantedBy=multi-user.target'
+
+  write_unit my-router-nftables.service \
+    '[Unit]' \
+    'Description=my-router nftables policy' \
+    'After=network-online.target my-router-rwth-netns.service' \
+    'Wants=network-online.target' \
+    '' \
+    '[Service]' \
+    'Type=oneshot' \
+    'RemainAfterExit=yes' \
+    'ExecStart=/opt/my-router/current/bin/my-router-apply-nftables' \
+    '' \
+    '[Install]' \
+    'WantedBy=multi-user.target'
+
+  write_unit my-router-rules.service \
+    '[Unit]' \
+    'Description=Build my-router rule provider files' \
+    'After=network-online.target' \
+    'Wants=network-online.target' \
+    '' \
+    '[Service]' \
+    'Type=oneshot' \
+    'ExecStart=/opt/my-router/current/bin/my-router-rules-build'
+
+  write_unit my-router-rules.timer \
+    '[Unit]' \
+    'Description=Refresh my-router rule provider files' \
+    '' \
+    '[Timer]' \
+    'OnBootSec=2min' \
+    'OnUnitActiveSec=12h' \
+    'Persistent=true' \
+    '' \
+    '[Install]' \
+    'WantedBy=timers.target'
+
+  write_unit my-router-caddy.service \
+    '[Unit]' \
+    'Description=Publish my-router generated configs and rules' \
+    'After=network-online.target my-router-rules.service' \
+    'Wants=network-online.target' \
+    '' \
+    '[Service]' \
+    'Restart=on-failure' \
+    'ExecStart=/opt/my-router/current/bin/my-router-caddy' \
+    'ExecReload=/bin/kill -USR1 $MAINPID' \
+    '' \
+    '[Install]' \
+    'WantedBy=multi-user.target'
+}
+
+enable_units() {
+  systemctl daemon-reload
+  systemctl enable my-router-wg-access.service my-router-rwth-netns.service my-router-nftables.service my-router-rules.timer my-router-caddy.service
+  info "enabled my-router systemd units"
+  info "start client access WireGuard with: systemctl start my-router-wg-access.service"
+  if [[ "${WG_OFFICE_ENABLED:-0}" == "1" ]]; then
+    systemctl enable my-router-wg-office.service
+    info "start office WireGuard with: systemctl start my-router-wg-office.service"
+  fi
+}
+
+main() {
+  require_root
+  install_examples
+  load_env
+  install_gc_root
+  if [[ ! -f "$WG_ACCESS_PRIVATE_KEY_FILE" ]]; then
+    info "created or refreshed examples under $MY_ROUTER_CONFIG_DIR"
+    info "create $WG_ACCESS_PRIVATE_KEY_FILE, edit config, then rerun deploy"
+    exit 0
+  fi
+  "$LIB_DIR/my-router-render"
+  install_units
+  "$LIB_DIR/my-router-rules-build"
+  enable_units
+  info "deploy complete; use my-router-rwth-connect for interactive RWTH login"
+}
+
+main "$@"

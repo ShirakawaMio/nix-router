@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LIB_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/my-router-lib.sh
+source "$LIB_DIR/my-router-lib.sh"
+
+load_env
+exec caddy run --config "$MY_ROUTER_CONFIG_DIR/Caddyfile" --adapter caddyfile

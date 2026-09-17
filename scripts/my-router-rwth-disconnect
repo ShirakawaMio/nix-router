@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LIB_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/my-router-lib.sh
+source "$LIB_DIR/my-router-lib.sh"
+
+main() {
+  require_root
+  load_env
+  local pids
+  pids="$(ip netns pids "$RWTH_NETNS" 2>/dev/null | xargs -r ps -o pid= -o comm= -p | awk '$2 == "openconnect" { print $1 }')" || true
+  if [[ -z "$pids" ]]; then
+    info "no OpenConnect process found in netns $RWTH_NETNS"
+    exit 0
+  fi
+
+  printf '%s\n' "$pids" | xargs -r kill
+  info "stopped OpenConnect in netns $RWTH_NETNS"
+}
+
+main "$@"

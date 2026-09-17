@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LIB_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/my-router-lib.sh
+source "$LIB_DIR/my-router-lib.sh"
+
+load_env
+config="${1:-${MY_ROUTER_SUBSCRIPTIONS_CONFIG:-$MY_ROUTER_CONFIG_DIR/subscriptions/config.json}}"
+exec python3 "$LIB_DIR/my-router-subscriptions-build.py" "$config"

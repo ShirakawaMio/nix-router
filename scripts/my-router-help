@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cat <<'EOF'
+my-router: Nix-managed miople VPN node
+
+Common commands:
+  my-router-doctor            validate env, deps, versions, keys, and rule TOML
+  my-router-render-dry-run    render configs into a temporary directory
+  my-router-deploy            install systemd units and render config
+  my-router-render            render WireGuard, nftables, and Caddy config
+  my-router-rules-build       build published rule-provider files
+  my-router-subscriptions-build  aggregate rules and node subscriptions
+  my-router-rwth-connect      interactively connect RWTH VPN in a netns
+  my-router-rwth-status       inspect RWTH netns and OpenConnect state
+  my-router-rwth-disconnect   stop OpenConnect in the RWTH netns
+
+Typical bootstrap:
+  sudo install -d -m 0755 /etc/my-router /etc/my-router/rules
+  sudo cp hosts/miople/miople.env.example /etc/my-router/miople.env
+  sudo cp rules/sources.toml.example /etc/my-router/rules/sources.toml
+  sudoedit /etc/my-router/miople.env
+  sudo my-router-deploy
+EOF

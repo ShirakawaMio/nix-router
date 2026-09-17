@@ -1,0 +1,13 @@
+{
+  "subscriptions": [
+    {
+      "name": "external-provider",
+      "url": "https://provider.example/subscription-token",
+      "user_agent": "clash.meta"
+    },
+    {
+      "name": "local-wireguard",
+      "content": "proxies:\n  - name: my-router\n    type: wireguard\n    server: vpn.example.com\n    port: 51820\n    ip: 10.77.0.2/32\n    private-key: CLIENT_PRIVATE_KEY\n    public-key: SERVER_PUBLIC_KEY\n    udp: true\n"
+    }
+  ]
+}

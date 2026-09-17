@@ -1,0 +1,256 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LIB_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/my-router-lib.sh
+source "$LIB_DIR/my-router-lib.sh"
+
+ERRORS=0
+WARNINGS=0
+
+ok() {
+  printf 'ok: %s\n' "$*"
+}
+
+warn() {
+  WARNINGS=$((WARNINGS + 1))
+  printf 'warn: %s\n' "$*" >&2
+}
+
+fail() {
+  ERRORS=$((ERRORS + 1))
+  printf 'error: %s\n' "$*" >&2
+}
+
+usage() {
+  cat <<'EOF'
+usage: my-router-doctor
+
+Validate the configured miople node without starting VPNs, changing routes,
+applying nftables, or writing systemd units.
+
+Set MY_ROUTER_ENV=/path/to/miople.env to validate a non-default environment.
+EOF
+}
+
+has_command() {
+  local command_name="$1"
+  if command -v "$command_name" >/dev/null 2>&1; then
+    ok "found $command_name"
+  else
+    fail "missing command: $command_name"
+  fi
+}
+
+required_var() {
+  local name="$1"
+  if [[ -n "${!name:-}" ]]; then
+    ok "$name is set"
+  else
+    fail "$name is empty"
+  fi
+}
+
+required_file() {
+  local path="$1"
+  local label="$2"
+  if [[ -f "$path" ]]; then
+    ok "found $label at $path"
+  else
+    fail "missing $label at $path"
+  fi
+}
+
+check_cidr_list() {
+  local name="$1"
+  local value="${!name:-}"
+
+  if [[ -z "$value" ]]; then
+    fail "$name is empty"
+    return
+  fi
+
+  if python3 - "$name" "$value" <<'PY'
+import ipaddress
+import sys
+
+name, value = sys.argv[1], sys.argv[2]
+for item in [part.strip() for part in value.split(",") if part.strip()]:
+    try:
+        ipaddress.ip_network(item, strict=False)
+    except ValueError as exc:
+        print(f"{name}: invalid CIDR {item}: {exc}", file=sys.stderr)
+        raise SystemExit(1)
+PY
+  then
+    ok "$name contains valid CIDRs"
+  else
+    fail "$name contains invalid CIDRs"
+  fi
+}
+
+version_ge() {
+  local actual="$1"
+  local minimum="$2"
+  local first
+  first="$(printf '%s\n%s\n' "$minimum" "$actual" | sort -V | head -n1)"
+  [[ "$first" == "$minimum" ]]
+}
+
+check_openconnect_version() {
+  local output version
+
+  if ! command -v openconnect >/dev/null 2>&1; then
+    fail "missing command: openconnect"
+    return
+  fi
+
+  output="$(openconnect --version 2>&1 || true)"
+  version="$(printf '%s\n' "$output" | sed -nE 's/.*OpenConnect version v?([0-9]+([.][0-9]+)+).*/\1/p' | head -n1)"
+
+  if [[ -z "$version" ]]; then
+    warn "could not parse OpenConnect version from: ${output%%$'\n'*}"
+    return
+  fi
+
+  if version_ge "$version" "9.20"; then
+    ok "OpenConnect $version is compatible with RWTH"
+  else
+    fail "OpenConnect $version is too old for RWTH; use 9.20 or newer"
+  fi
+}
+
+check_interface_hint() {
+  local interface_name="${EXT_IF:-}"
+  if [[ -z "$interface_name" ]]; then
+    fail "EXT_IF is empty"
+    return
+  fi
+
+  if ip link show "$interface_name" >/dev/null 2>&1; then
+    ok "EXT_IF exists: $interface_name"
+  else
+    warn "EXT_IF does not exist on this host right now: $interface_name"
+  fi
+}
+
+check_publish_config() {
+  required_var PUBLISH_TOKEN
+  required_var PUBLISH_BASE_URL
+
+  if [[ "${PUBLISH_TOKEN:-}" == "change-this-long-random-token" ]]; then
+    fail "PUBLISH_TOKEN still uses the example value"
+  fi
+
+  if [[ "${PUBLISH_BASE_URL:-}" == *example.com* || "${PUBLISH_BASE_URL:-}" == *example.invalid* ]]; then
+    fail "PUBLISH_BASE_URL still uses an example domain"
+  fi
+
+  if [[ -n "${PUBLISH_TOKEN:-}" && -n "${PUBLISH_BASE_URL:-}" && "$PUBLISH_BASE_URL" != *"$PUBLISH_TOKEN"* ]]; then
+    warn "PUBLISH_BASE_URL does not contain PUBLISH_TOKEN; generated rule URLs may not match Caddy"
+  fi
+}
+
+check_wireguard_config() {
+  required_var WG_ACCESS_IF
+  required_var WG_ACCESS_ADDRESS
+  required_var WG_ACCESS_CIDR
+  required_var WG_ACCESS_PORT
+  required_var WG_ACCESS_PRIVATE_KEY_FILE
+  required_file "$WG_ACCESS_PRIVATE_KEY_FILE" "wg-access private key"
+
+  if [[ -n "${WG_ACCESS_PEERS_FILE:-}" && -f "$WG_ACCESS_PEERS_FILE" ]]; then
+    ok "found wg-access peers at $WG_ACCESS_PEERS_FILE"
+  else
+    warn "wg-access peers file is missing; render will create a placeholder peer section"
+  fi
+
+  check_cidr_list WG_ACCESS_CIDR
+
+  if [[ "${WG_OFFICE_ENABLED:-0}" == "1" ]]; then
+    required_var WG_OFFICE_IF
+    required_var WG_OFFICE_ADDRESS
+    required_var WG_OFFICE_PRIVATE_KEY_FILE
+    required_file "$WG_OFFICE_PRIVATE_KEY_FILE" "wg-office private key"
+    required_var WG_OFFICE_PEER_PUBLIC_KEY
+    required_var WG_OFFICE_ENDPOINT
+    required_var WG_OFFICE_ALLOWED_IPS
+    check_cidr_list WG_OFFICE_ALLOWED_IPS
+  else
+    ok "office WireGuard is disabled"
+  fi
+}
+
+check_rwth_config() {
+  if [[ "${RWTH_ENABLED:-1}" == "0" ]]; then
+    ok "RWTH VPN is disabled"
+    return
+  fi
+
+  required_var RWTH_NETNS
+  required_var RWTH_GATEWAY
+  required_var RWTH_AUTHGROUP
+  required_var RWTH_USER
+  required_var RWTH_CIDRS
+  check_cidr_list RWTH_CIDRS
+
+  if [[ "${RWTH_GATEWAY:-}" != "vpn.rwth-aachen.de" ]]; then
+    warn "RWTH_GATEWAY is not the expected vpn.rwth-aachen.de"
+  fi
+
+  if [[ "${RWTH_AUTHGROUP:-}" != "RWTH-VPN (Split Tunnel)" ]]; then
+    warn "RWTH_AUTHGROUP differs from the tested split-tunnel group"
+  fi
+}
+
+check_rule_config() {
+  local config="${MY_ROUTER_RULES_CONFIG:-$MY_ROUTER_CONFIG_DIR/rules/sources.toml}"
+
+  if [[ ! -f "$config" ]]; then
+    fail "missing rule config at $config"
+    return
+  fi
+
+  if python3 "$LIB_DIR/my-router-rules-build.py" --check "$config"; then
+    ok "rule config validates: $config"
+  else
+    fail "rule config failed validation: $config"
+  fi
+}
+
+main() {
+  if [[ "$#" -gt 0 ]]; then
+    case "$1" in
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown argument: $1"
+        ;;
+    esac
+  fi
+
+  info "loading $MY_ROUTER_ENV"
+  load_env
+
+  for command_name in ip wg wg-quick nft caddy python3; do
+    has_command "$command_name"
+  done
+  check_openconnect_version
+
+  check_interface_hint
+  check_publish_config
+  check_wireguard_config
+  check_rwth_config
+  check_rule_config
+
+  if [[ "$ERRORS" -gt 0 ]]; then
+    printf 'doctor failed: %d error(s), %d warning(s)\n' "$ERRORS" "$WARNINGS" >&2
+    exit 1
+  fi
+
+  printf 'doctor passed: %d warning(s)\n' "$WARNINGS"
+}
+
+main "$@"

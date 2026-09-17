@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LIB_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/my-router-lib.sh
+source "$LIB_DIR/my-router-lib.sh"
+
+main() {
+  load_env
+  if ! ip netns list | grep -q "^${RWTH_NETNS}\b"; then
+    echo "netns $RWTH_NETNS does not exist"
+    exit 0
+  fi
+
+  echo "namespace:"
+  ip netns exec "$RWTH_NETNS" ip -brief addr
+  echo
+  echo "routes:"
+  ip netns exec "$RWTH_NETNS" ip route
+  echo
+  echo "openconnect:"
+  ip netns pids "$RWTH_NETNS" 2>/dev/null | xargs -r ps -o pid= -o comm= -o args= -p | awk '$2 == "openconnect" { print }' || true
+}
+
+main "$@"

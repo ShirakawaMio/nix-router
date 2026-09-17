@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LIB_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/my-router-lib.sh
+source "$LIB_DIR/my-router-lib.sh"
+
+delete_gateway_exceptions() {
+  local gateway ip
+  gateway="${RWTH_GATEWAY:-vpn.rwth-aachen.de}"
+  while read -r ip; do
+    [[ -n "$ip" ]] || continue
+    ip route del "$ip/32" 2>/dev/null || true
+  done < <(getent ahostsv4 "$gateway" | awk '{ print $1 }' | sort -u)
+}
+
+main() {
+  require_root
+  load_env
+  ip netns exec "$RWTH_NETNS" nft delete table inet my_router_rwth 2>/dev/null || true
+  delete_gateway_exceptions
+  for cidr in $(comma_to_space "${RWTH_CIDRS:-}"); do
+    ip route del "$cidr" via "$RWTH_NS_IP" dev "$RWTH_HOST_IF" 2>/dev/null || true
+  done
+  ip link del "$RWTH_HOST_IF" 2>/dev/null || true
+  ip netns del "$RWTH_NETNS" 2>/dev/null || true
+  info "RWTH namespace $RWTH_NETNS removed"
+}
+
+main "$@"

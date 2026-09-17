@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LIB_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/my-router-lib.sh
+source "$LIB_DIR/my-router-lib.sh"
+
+main() {
+  require_root
+  load_env
+  sysctl -w net.ipv4.ip_forward=1 >/dev/null
+  sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null
+  nft -f "$MY_ROUTER_CONFIG_DIR/nftables.conf"
+  info "applied $MY_ROUTER_CONFIG_DIR/nftables.conf"
+}
+
+main "$@"

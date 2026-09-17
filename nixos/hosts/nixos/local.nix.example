@@ -1,0 +1,34 @@
+{
+  lib,
+  pkgs,
+  ...
+}:
+
+{
+  boot.loader.grub.enable = true;
+  boot.loader.grub.device = "/dev/sda";
+
+  networking.hostName = "my-router";
+
+  users.mutableUsers = true;
+  users.users.router = {
+    isNormalUser = true;
+    extraGroups = [ "wheel" ];
+    shell = pkgs.bashInteractive;
+  };
+
+  services.my-router = {
+    externalInterface = "eth0";
+    publish = {
+      bind = "vpn.example.com";
+      port = 443;
+      urlPrefix = "https://vpn.example.com";
+    };
+    rwth.user = "replace-with-rwth-user";
+    access = {
+      publicEndpoint = "vpn-origin.example.com";
+      nodeName = "my-router";
+      autoPeer.enable = true;
+    };
+  };
+}

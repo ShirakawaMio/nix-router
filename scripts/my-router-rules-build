@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LIB_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/my-router-lib.sh
+source "$LIB_DIR/my-router-lib.sh"
+
+main() {
+  load_env
+  local config="${MY_ROUTER_RULES_CONFIG:-$MY_ROUTER_CONFIG_DIR/rules/sources.toml}"
+  python3 "$LIB_DIR/my-router-rules-build.py" "$config"
+}
+
+main "$@"

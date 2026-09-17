@@ -1,0 +1,12 @@
+# Appended to /etc/wireguard/wg-access.conf by my-router-render.
+# Keep one [Peer] block per client.
+
+[Peer]
+# macbook
+PublicKey = replace-with-client-public-key
+AllowedIPs = 10.77.0.10/32
+
+[Peer]
+# iphone
+PublicKey = replace-with-client-public-key
+AllowedIPs = 10.77.0.11/32
