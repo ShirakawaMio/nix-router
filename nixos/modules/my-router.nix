@@ -712,10 +712,12 @@ in
       "d ${cfg.stateDir} 0755 root root - -"
       "d ${cfg.stateDir}/www 0755 root root - -"
       "d ${cfg.stateDir}/secrets 0700 root root - -"
+      "Z /var/lib/caddy - caddy caddy - -"
     ]
-    ++ optionals cfg.subscriptions.enable [
-      "d ${subscriptionStateDir} 0700 my-router-sub-store my-router-sub-store - -"
-    ];
+      ++ optionals cfg.subscriptions.enable [
+        "d ${subscriptionStateDir} 0700 my-router-sub-store my-router-sub-store - -"
+        "Z ${subscriptionStateDir} - my-router-sub-store my-router-sub-store - -"
+      ];
 
     systemd.services.my-router-secrets = mkIf (cfg.publish.token == null) {
       description = "Create my-router runtime secrets";
