@@ -154,7 +154,7 @@ services.rwth-hpc-login = {
   targetUser = "replace-with-rwth-user";
   users = [ "router" ];
   passwordFile = config.age.secrets.rwth-hpc-password.path;
-  totpSecretFile = config.age.secrets.rwth-totp-secret.path;
+  totpSecretFile = config.age.secrets.rwth-hpc-totp-secret.path;
   hostPublicKey = "ssh-ed25519 AAAA...";
 };
 
@@ -164,19 +164,21 @@ age.secrets.rwth-hpc-password = {
   mode = "0440";
 };
 
-age.secrets.rwth-totp-secret = {
-  file = ./secrets/rwth-totp-secret.age;
+age.secrets.rwth-hpc-totp-secret = {
+  file = ./secrets/rwth-hpc-totp-secret.age;
   group = "rwth-hpc-login";
   mode = "0440";
 };
 ```
 
-Create the separate encrypted HPC password on the NixOS host:
+Create the separate encrypted HPC password and TOTP seed on the NixOS host:
 
 ```bash
 cd /etc/nixos/secrets
 sudo env EDITOR=vim RULES=/etc/nixos/secrets/secrets.nix \
   agenix -e rwth-hpc-password.age -i /etc/ssh/ssh_host_ed25519_key
+sudo env EDITOR=vim RULES=/etc/nixos/secrets/secrets.nix \
+  agenix -e rwth-hpc-totp-secret.age -i /etc/ssh/ssh_host_ed25519_key
 sudo nixos-rebuild switch --flake /etc/nixos#good-girl-prototype
 ```
 
@@ -194,8 +196,9 @@ Host rwth
 
 This alias intentionally replaces `ProxyJump`: with a transparent proxy the
 target authentication remains on the local SSH client and cannot be answered
-by the jump host. Keep the HPC login password in a separate secret from
-`rwth-password.age`: RWTH VPN and HPC SSH may use different passwords.
+by the jump host. Keep the HPC login password and TOTP seed separate from
+`rwth-password.age` and `rwth-totp-secret.age`: RWTH VPN and HPC SSH may use
+different credentials.
 
 ### NixOS agenix auto-connect
 

@@ -115,8 +115,8 @@ in
     totpSecretFile = mkOption {
       type = types.str;
       default = "";
-      example = "/run/agenix/rwth-totp-secret";
-      description = "File containing the Base32 TOTP seed, optionally prefixed with base32:.";
+      example = "/run/agenix/rwth-hpc-totp-secret";
+      description = "File containing the RWTH HPC Base32 TOTP seed, optionally prefixed with base32:.";
     };
 
     users = mkOption {
