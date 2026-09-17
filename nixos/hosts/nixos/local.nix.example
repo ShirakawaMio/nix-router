@@ -19,6 +19,7 @@
 
   services.my-router = {
     externalInterface = "eth0";
+    rules.prebuiltAdsBaseUrl = "https://YOUR_GITHUB_USER.github.io/YOUR_REPOSITORY/providers";
     publish = {
       bind = "vpn.example.com";
       port = 443;

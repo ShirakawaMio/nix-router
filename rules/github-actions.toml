@@ -1,0 +1,18 @@
+[publish]
+output_root = "_site"
+token = ""
+public_base_url = ""
+
+[ads]
+prebuilt_base_url = ""
+urls = [
+  "https://raw.githubusercontent.com/217heidai/adblockfilters/main/rules/adblockmihomo.yaml",
+]
+local_files = []
+
+[office]
+cidrs = []
+
+[rwth]
+cidrs = []
+domains = []

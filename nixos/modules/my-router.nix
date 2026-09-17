@@ -140,7 +140,10 @@ let
     public_base_url = ${toml publishBaseUrlForToml}
 
     [ads]
-    urls = ${tomlList cfg.rules.adsUrls}
+    prebuilt_base_url = ${
+      toml (if cfg.rules.prebuiltAdsBaseUrl == null then "" else cfg.rules.prebuiltAdsBaseUrl)
+    }
+    urls = ${tomlList (if cfg.rules.prebuiltAdsBaseUrl == null then cfg.rules.adsUrls else [ ])}
     local_files = ${tomlList cfg.rules.adsLocalFiles}
 
     [office]
@@ -523,6 +526,17 @@ in
     };
 
     rules = {
+      prebuiltAdsBaseUrl = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "https://example.github.io/my-router/providers";
+        description = ''
+          Optional URL containing GitHub Actions-built ads.yaml and
+          ads-shadowrocket.list files. When set, remote ad sources are not
+          normalized on this host.
+        '';
+      };
+
       adsUrls = mkOption {
         type = types.listOf types.str;
         default = [
@@ -833,7 +847,7 @@ in
         };
 
     systemd.services.my-router-rules = {
-      description = "Build my-router rule provider files";
+      description = "Synchronize my-router rule provider files";
       after = [ "network-online.target" ] ++ secretService;
       wants = [ "network-online.target" ];
       requires = secretService;
@@ -845,7 +859,7 @@ in
     };
 
     systemd.timers.my-router-rules = {
-      description = "Refresh my-router rule provider files";
+      description = "Synchronize my-router rule provider files";
       wantedBy = [ "timers.target" ];
       timerConfig = {
         OnBootSec = "2min";

@@ -18,7 +18,7 @@ client
 - `wg-office`: optional WireGuard client to the company network.
 - `rwth` network namespace: OpenConnect/AnyConnect to `vpn.rwth-aachen.de` using `RWTH-VPN (Split Tunnel)`.
 - `nftables`: minimal forwarding and NAT between the access tunnel, office tunnel, and RWTH namespace.
-- Rules publisher: embeds normalized rules into tokenized Mihomo, Stash, and Shadowrocket configs and serves them with Caddy.
+- Rules publisher: synchronizes GitHub Actions-built ad rules, adds local routing rules, embeds everything into tokenized Mihomo, Stash, and Shadowrocket configs, and serves them with Caddy.
 - Subscription aggregator: runs a private Sub-Store backend and renders node feeds plus complete Mihomo and Shadowrocket configs.
 - Non-NixOS deployment: a Nix package plus systemd units under `/opt/my-router/current`.
 
@@ -161,7 +161,7 @@ my-router-rwth-status
 
 NixOS runs two separate declarative services:
 
-- `my-router-rules.service` normalizes ad, office, and RWTH rules.
+- `my-router-rules.service` downloads pre-normalized ad rules and generates the small office and RWTH rule sets locally.
 - `my-router-sub-store.service` parses local and external node formats on `127.0.0.1` only.
 - `my-router-subscriptions.service` combines both into client-facing files.
 
@@ -205,6 +205,24 @@ service generates its persistent client key on first boot, derives the public
 key, and registers the peer on `wg-access`. No key generation or public-key
 copying is required. External sources are merged after this built-in node.
 
+### GitHub Actions rule builds
+
+The `Publish rules` workflow downloads and normalizes the public ad-block source
+every 8 hours, then publishes `ads.yaml` and `ads-shadowrocket.list` with GitHub
+Pages. In the repository settings, select **GitHub Actions** as the Pages source,
+then configure the NixOS host with:
+
+```nix
+services.my-router.rules.prebuiltAdsBaseUrl =
+  "https://YOUR_GITHUB_USER.github.io/YOUR_REPOSITORY/providers";
+```
+
+The server downloads those two already-normalized files instead of processing
+the upstream list. Local office and RWTH rules are still generated on the host,
+and the subscription builder embeds all rules into the final Mihomo and
+Shadowrocket files. Clients therefore do not depend on GitHub Pages after an
+import or refresh from the router.
+
 ## Published URLs
 
 After both builders complete, Caddy serves:
@@ -223,8 +241,9 @@ After both builders complete, Caddy serves:
 /$PUBLISH_TOKEN/providers/rwth-shadowrocket.list
 ```
 
-The default ad-block source is `217heidai/adblockfilters`. Rules refresh every
-8 hours to match the upstream publication schedule. External node sources
+The default ad-block source is `217heidai/adblockfilters`. GitHub Actions builds
+it every 8 hours to match the upstream publication schedule, and the server
+synchronizes the resulting files on the same interval. External node sources
 refresh hourly by default.
 
 Mihomo and Clash Verge need only `mihomo.yaml`; all nodes and rules are embedded

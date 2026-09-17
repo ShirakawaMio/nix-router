@@ -5,6 +5,9 @@ public_base_url = "https://vpn.example.com/change-this-long-random-token"
 
 [ads]
 # Hosts, AdGuard, and Clash DOMAIN/DOMAIN-SUFFIX style lines are accepted.
+# Set this to the GitHub Pages providers directory to download pre-normalized
+# ads.yaml and ads-shadowrocket.list instead of processing urls locally.
+prebuilt_base_url = ""
 urls = [
   "https://raw.githubusercontent.com/217heidai/adblockfilters/main/rules/adblockmihomo.yaml",
 ]

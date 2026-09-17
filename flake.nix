@@ -80,6 +80,8 @@
                 PYTHONPYCACHEPREFIX=$TMPDIR python -m py_compile \
                   ${./scripts}/my-router-rules-build.py \
                   ${./scripts}/my-router-subscriptions-build.py
+                MY_ROUTER_RULES_SCRIPT=${./scripts}/my-router-rules-build.py \
+                  python -m unittest discover -s ${./tests}
                 touch "$out"
               '';
         }

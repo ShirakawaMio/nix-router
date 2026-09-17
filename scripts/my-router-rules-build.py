@@ -3,6 +3,7 @@ import ipaddress
 import os
 import re
 import sys
+import tempfile
 import tomllib
 import urllib.request
 from pathlib import Path
@@ -43,6 +44,10 @@ def iter_source_lines(section: dict) -> list[str]:
     for url in section.get("urls", []):
         lines.extend(fetch_text(url).splitlines())
     return lines
+
+
+def iter_local_lines(section: dict) -> list[str]:
+    return iter_source_lines({"local_files": section.get("local_files", [])})
 
 
 def normalize_domain(raw: str) -> str | None:
@@ -102,7 +107,14 @@ def validate_config(config: dict) -> None:
     if public_base_url:
         validate_url(public_base_url)
 
-    for url in config.get("ads", {}).get("urls", []):
+    ads = config.get("ads", {})
+    prebuilt_base_url = str(ads.get("prebuilt_base_url", "")).strip().rstrip("/")
+    if prebuilt_base_url:
+        validate_url(prebuilt_base_url)
+        if ads.get("urls", []):
+            die("ads.prebuilt_base_url and ads.urls are mutually exclusive")
+
+    for url in ads.get("urls", []):
         validate_url(url)
 
     for value in config.get("office", {}).get("cidrs", []):
@@ -129,6 +141,42 @@ def write_shadowrocket_provider(path: Path, values: list[str]) -> None:
     path.write_text("\n".join(unique) + "\n", encoding="utf-8")
 
 
+def atomic_write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        delete=False,
+    ) as handle:
+        handle.write(content)
+        temp_path = Path(handle.name)
+    os.chmod(temp_path, 0o644)
+    os.replace(temp_path, path)
+
+
+def write_prebuilt_ads(providers: Path, base_url: str, local_ads: list[str]) -> None:
+    mihomo = fetch_text(f"{base_url}/ads.yaml")
+    shadowrocket = fetch_text(f"{base_url}/ads-shadowrocket.list")
+    if not mihomo.startswith("payload:\n"):
+        die("prebuilt ads.yaml does not start with a payload mapping")
+    if "\x00" in mihomo or "\x00" in shadowrocket:
+        die("prebuilt ad rules contain NUL bytes")
+
+    unique_local_ads = sorted(dict.fromkeys(local_ads))
+    if unique_local_ads:
+        mihomo = mihomo.rstrip("\n") + "\n"
+        mihomo += "\n".join(f"  - {yaml_quote(value)}" for value in unique_local_ads) + "\n"
+        shadowrocket = shadowrocket.rstrip("\n") + "\n"
+        shadowrocket += "\n".join(
+            f"DOMAIN-SUFFIX,{value.removeprefix('+.')}" for value in unique_local_ads
+        ) + "\n"
+
+    atomic_write_text(providers / "ads.yaml", mihomo)
+    atomic_write_text(providers / "ads-shadowrocket.list", shadowrocket)
+
+
 def main() -> None:
     args = sys.argv[1:]
     check_only = False
@@ -138,8 +186,8 @@ def main() -> None:
 
     config_path = Path(args[0]) if args else Path("/etc/my-router/rules/sources.toml")
     config = read_toml(config_path)
+    validate_config(config)
     if check_only:
-        validate_config(config)
         print(f"validated {config_path}")
         return
 
@@ -149,7 +197,14 @@ def main() -> None:
     root = output_root / token
     providers = root / "providers"
 
-    ads = [domain for line in iter_source_lines(config.get("ads", {})) if (domain := normalize_domain(line))]
+    ads_section = config.get("ads", {})
+    prebuilt_ads_base_url = str(ads_section.get("prebuilt_base_url", "")).strip().rstrip("/")
+    local_ads = [domain for line in iter_local_lines(ads_section) if (domain := normalize_domain(line))]
+    ads = []
+    if prebuilt_ads_base_url:
+        write_prebuilt_ads(providers, prebuilt_ads_base_url, local_ads)
+    else:
+        ads = [domain for line in iter_source_lines(ads_section) if (domain := normalize_domain(line))]
     office_cidrs = [normalize_cidr(value) for value in config.get("office", {}).get("cidrs", [])]
 
     rwth_section = config.get("rwth", {})
@@ -171,13 +226,14 @@ def main() -> None:
         rule_type = "IP-CIDR6" if network.version == 6 else "IP-CIDR"
         office_shadowrocket.append(f"{rule_type},{value},no-resolve")
 
-    write_provider(providers / "ads.yaml", ads)
+    if not prebuilt_ads_base_url:
+        write_provider(providers / "ads.yaml", ads)
+        write_shadowrocket_provider(
+            providers / "ads-shadowrocket.list",
+            [f"DOMAIN-SUFFIX,{value.removeprefix('+.')}" for value in ads],
+        )
     write_provider(providers / "office-cidr.yaml", office_cidrs)
     write_provider(providers / "rwth.yaml", rwth_payload)
-    write_shadowrocket_provider(
-        providers / "ads-shadowrocket.list",
-        [f"DOMAIN-SUFFIX,{value.removeprefix('+.')}" for value in ads],
-    )
     write_shadowrocket_provider(providers / "office-shadowrocket.list", office_shadowrocket)
     write_shadowrocket_provider(providers / "rwth-shadowrocket.list", rwth_shadowrocket)
 
