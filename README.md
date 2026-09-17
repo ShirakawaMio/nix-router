@@ -128,7 +128,8 @@ This keeps RWTH-pushed routes and DNS away from the host namespace.
 RWTH destination routes use a dedicated policy table selected only for traffic
 from the WireGuard client subnet. This prevents an RWTH CIDR from capturing the
 public endpoint of a roaming WireGuard client that happens to be on an RWTH
-network.
+network. The NixOS firewall keeps strict reverse-path checking globally and
+allows the expected asymmetric return path only on the RWTH host veth.
 
 ### NixOS agenix auto-connect
 

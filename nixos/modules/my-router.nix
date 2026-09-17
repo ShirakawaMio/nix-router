@@ -770,6 +770,9 @@ in
       allowedUDPPorts = [ cfg.access.listenPort ];
       filterForward = true;
       extraForwardRules = accessForwardRules;
+      extraReversePathFilterRules = optionalString cfg.rwth.enable ''
+        iifname "${cfg.rwth.hostInterface}" accept
+      '';
     };
 
     systemd.services.my-router-access-auto-peer = mkIf cfg.access.autoPeer.enable {
