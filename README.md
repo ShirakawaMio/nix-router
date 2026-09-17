@@ -153,13 +153,13 @@ services.rwth-hpc-login = {
   enable = true;
   targetUser = "replace-with-rwth-user";
   users = [ "router" ];
-  passwordFile = config.age.secrets.rwth-password.path;
+  passwordFile = config.age.secrets.rwth-hpc-password.path;
   totpSecretFile = config.age.secrets.rwth-totp-secret.path;
   hostPublicKey = "ssh-ed25519 AAAA...";
 };
 
-age.secrets.rwth-password = {
-  file = ./secrets/rwth-password.age;
+age.secrets.rwth-hpc-password = {
+  file = ./secrets/rwth-hpc-password.age;
   group = "rwth-hpc-login";
   mode = "0440";
 };
@@ -185,7 +185,8 @@ Host rwth
 
 This alias intentionally replaces `ProxyJump`: with a transparent proxy the
 target authentication remains on the local SSH client and cannot be answered
-by the jump host.
+by the jump host. Keep the HPC login password in a separate secret from
+`rwth-password.age`: RWTH VPN and HPC SSH may use different passwords.
 
 ### NixOS agenix auto-connect
 

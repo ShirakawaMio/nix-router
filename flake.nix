@@ -68,7 +68,7 @@
                   enable = true;
                   targetUser = "ab123456";
                   hostPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKOr079DWsli+ySeDvGr+S4APZaMc36Fquer++FZh0px";
-                  passwordFile = "/run/agenix/rwth-password";
+                  passwordFile = "/run/agenix/rwth-hpc-password";
                   totpSecretFile = "/run/agenix/rwth-totp-secret";
                   users = [ "test" ];
                 };

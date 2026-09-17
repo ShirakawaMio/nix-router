@@ -70,6 +70,7 @@ EOF
         -o ConnectTimeout=${toString cfg.connectTimeout} \
         -o GlobalKnownHostsFile=/etc/ssh/ssh_known_hosts \
         -o KbdInteractiveAuthentication=yes \
+        -o NumberOfPasswordPrompts=1 \
         -o PasswordAuthentication=no \
         -o PreferredAuthentications=keyboard-interactive \
         -o PubkeyAuthentication=no \
@@ -107,8 +108,8 @@ in
     passwordFile = mkOption {
       type = types.str;
       default = "";
-      example = "/run/agenix/rwth-password";
-      description = "File containing the static RWTH password.";
+      example = "/run/agenix/rwth-hpc-password";
+      description = "File containing the RWTH HPC login password.";
     };
 
     totpSecretFile = mkOption {
