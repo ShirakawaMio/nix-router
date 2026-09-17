@@ -171,6 +171,15 @@ age.secrets.rwth-totp-secret = {
 };
 ```
 
+Create the separate encrypted HPC password on the NixOS host:
+
+```bash
+cd /etc/nixos/secrets
+sudo env EDITOR=vim RULES=/etc/nixos/secrets/secrets.nix \
+  agenix -e rwth-hpc-password.age -i /etc/ssh/ssh_host_ed25519_key
+sudo nixos-rebuild switch --flake /etc/nixos#good-girl-prototype
+```
+
 Run `ssh -t router@vpn.example.com rwth-hpc-login` for an interactive login.
 To keep `ssh rwth` as the local command, use a host alias that logs into the
 jump host and starts the helper there:
